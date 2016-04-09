@@ -1,7 +1,13 @@
+# Author Dev Files
+amazon/api.py
+config.json
+sandbox.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 # C extensions
 *.so
@@ -60,3 +66,6 @@ target/
 
 #Ipython Notebook
 .ipynb_checkpoints
+
+#O SX System Files
+.DS_Store
