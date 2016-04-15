@@ -67,7 +67,7 @@ class ProductAdvertisingAPI(object):
         self.AWSAccessKeySecret = AWSAccessKeySecret
         self.Region = Region
         self.Version = Version
-        self.timeout=timeout
+        self.timeout = timeout
         self.qps = qps
         self.Service = 'AWSECommerceService'
         self.ITEM_ID_MAX = 10
@@ -112,7 +112,7 @@ class ProductAdvertisingAPI(object):
             for e in errors:
                 err_message = e['Message']
                 err_code = e['Code']
-                logger.error('%s  -  %s' % (err_code, err_message))
+                logger.error('%s  -  %s', err_code, err_message)
                 raise AmazonException('%s  -  %s' % (err_code, err_message))
         return self
 
@@ -165,7 +165,8 @@ class ProductAdvertisingAPI(object):
             ItemIdType = 'ASIN'
             self._check_valid_asin(ItemId)
         params = {
-            'ItemId': ItemId
+            'ItemId': ItemId,
+            'ItemIdType': ItemIdType
         }
         kwargs.update(params)
         response = self._make_request('SimilarityLookup', **kwargs)
