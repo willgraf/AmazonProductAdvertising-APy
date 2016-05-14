@@ -9,7 +9,7 @@ To use:
 # the credentials will be provided by Amazon when registering for the API.
 amazon = AmazonAPI(AssociateTag="<YOUR-ASSOCIATE-TAG>",
                    AWSAccessKeyId="<YOUR-AWS-KEY-ID>",
-                   AWSAccessKeySecret="<YOUR-AWS-KEY-SECRET>",
+                   AWSAccessKeySecret="<YOUR-AWS-KEY-SECRET>")
 
 item_details = amazon.ItemLookup(ItemId='B123456789',
                                  ResponseGroup='ItemAttributes,OfferFull,Offers')
