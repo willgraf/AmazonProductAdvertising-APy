@@ -1,6 +1,6 @@
 #!/usr/bin/env
 # -*- coding: utf-8 -*-
-from amazon.api import *
+from amazonapi.productadvertising import *
 import logging
 
 

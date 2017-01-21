@@ -5,8 +5,8 @@ import pytest
 import sys, os.path
 sys.path.append(os.path.dirname(os.path.realpath(__file__)) + "/../")
 
-from amazon.productadvertising import ProductAdvertisingAPI
-from amazon.exceptions import *
+from amazonapi.productadvertising import ProductAdvertisingAPI
+from amazonapi.exceptions import AmazonException
 
 # Setting up testing variables
 with open('./config.json', 'r') as config_file:
