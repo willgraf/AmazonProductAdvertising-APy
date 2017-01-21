@@ -51,7 +51,8 @@ that the keyword name be that of the paramter in the API documentation.
 class ProductAdvertisingAPI(object):
 
     def __init__(self, AssociateTag, AWSAccessKeyId, AWSAccessKeySecret,
-                 Region='US', Version='2013-08-01', qps=None, timeout=None):
+                 Region='US', Version='2013-08-01', Service='AWSECommerceService',
+                 qps=None, timeout=None):
         if (AssociateTag is None) or (AWSAccessKeyId is None) or (AWSAccessKeySecret is None):
             raise ValueError('Your Amazon Credentials are'
                              ' required and cannot be None.')
@@ -67,11 +68,12 @@ class ProductAdvertisingAPI(object):
         self.AWSAccessKeySecret = AWSAccessKeySecret
         self.Region = Region
         self.Version = Version
-        self.timeout = timeout
-        self.qps = qps
-        self.Service = 'AWSECommerceService'
+        self.Service = Service
         self.ITEM_ID_MAX = 10
+        self.qps = qps
+        self.timeout = timeout
         self._last_time = None
+
 
     def _make_request(self, name, **kwargs):
         request = AmazonRequest(self.AssociateTag, self.AWSAccessKeyId,
