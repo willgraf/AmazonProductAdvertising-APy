@@ -7,6 +7,8 @@ To use:
 
 ```python
 # the credentials will be provided by Amazon when registering for the API.
+from amazon.productadvertising import ProductAdvertisingAPI as AmazonAPI
+
 amazon = AmazonAPI(AssociateTag="<YOUR-ASSOCIATE-TAG>",
                    AWSAccessKeyId="<YOUR-AWS-KEY-ID>",
                    AWSAccessKeySecret="<YOUR-AWS-KEY-SECRET>")

@@ -76,11 +76,6 @@ class ProductAdvertisingAPI(object):
 
 
     def _make_request(self, name, **kwargs):
-        request = AmazonRequest(self.AssociateTag, self.AWSAccessKeyId,
-                                self.AWSAccessKeySecret, Operation=name,
-                                Region=self.Region, Service=self.Service,
-                                Version=self.Version, timeout=self.timeout)
-
         if self.qps is not None and self.qps > 0:
             if self._last_time is not None:
                 wait_time = 1 / self.qps - (time.time() - self._last_time)
@@ -89,6 +84,12 @@ class ProductAdvertisingAPI(object):
                                    round(wait_time, 3))
                     time.sleep(wait_time)
             self._last_time = time.time()
+
+        request = AmazonRequest(self.AssociateTag, self.AWSAccessKeyId,
+                                self.AWSAccessKeySecret, Operation=name,
+                                Region=self.Region, Service=self.Service,
+                                Version=self.Version, timeout=self.timeout)
+
         return request.execute(**kwargs)
 
     def _check_valid_asin(self, asin):
@@ -110,18 +111,18 @@ class ProductAdvertisingAPI(object):
     def _handle_errors(self, request):
         if 'Errors' in request:
             errors = request['Errors']['Error']
-            errors = [errors] if type(errors) is not list else errors
-            for e in errors:
-                err_message = e['Message']
-                err_code = e['Code']
+            errors = [errors] if not isinstance(errors, list) else errors
+            for err in errors:
+                err_message = err['Message']
+                err_code = err['Code']
                 logger.error('%s  -  %s', err_code, err_message)
                 raise AmazonException('%s  -  %s' % (err_code, err_message))
         return self
 
     def _parse_multiple_items(self, data):
-        if type(data) is str and ',' in data:
+        if isinstance(data, str) and ',' in data:
             data = data.split(',')
-        if type(data) is not list:
+        if not isinstance(data, list):
             data = [data]
         return data
 
@@ -238,9 +239,9 @@ class ProductAdvertisingAPI(object):
             ItemId = [ItemId]
         if 'Quantity' in kwargs:
             Quantity = kwargs['Quantity']
-            if type(Quantity) is str and ',' in Quantity:
+            if isinstance(Quantity, str) and ',' in Quantity:
                 Quantity = Quantity.split(',')
-            if type(Quantity) is list and len(Quantity) != len(ItemId):
+            if isinstance(Quantity, list) and len(Quantity) != len(ItemId):
                 raise AmazonException('Weird stuff with multiple items and '
                                       'their quantities is not matching up.')
         else:
@@ -280,9 +281,9 @@ class ProductAdvertisingAPI(object):
             raise ValueError('CartItemId is required.')
         elif HMAC is None:
             raise ValueError('HMAC is requred')
-        elif type(CartItemId) is str and ',' in CartItemId:
+        elif isinstance(CartItemId, str) and ',' in CartItemId:
             CartItemId = CartItemId.split(',')
-        if type(CartItemId) is not list:
+        if not isinstance(CartItemId, list):
             CartItemId = [CartItemId]
         Quantity = '1' if 'Quantity' not in kwargs else kwargs['Quantity']
         self._check_valid_quantity(Quantity)
@@ -334,12 +335,12 @@ class AmazonRequest(object):
 
     def _quote_params(self, params):
         key_values = []
-        for k, v in params.iteritems():
-            if type(k) is not str:
-                k = str(k)
-            if type(v) is not str:
-                v = str(v)
-            key_values.append((quote(k), quote(v)))
+        for key, val in params.iteritems():
+            if not isinstance(key, str):
+                key = str(key)
+            if not isinstance(val, str):
+                val = str(val)
+            key_values.append((quote(key), quote(val)))
         key_values.sort()
         return '&'.join(['%s=%s' % (k, v) for k, v in key_values])
 
@@ -360,9 +361,9 @@ class AmazonRequest(object):
 
         msg = 'GET\n' + server + '\n' + '/onca/xml\n' + quoted_params
 
-        if type(msg) is unicode:
-            self.msg = msg.encode('utf-8')
-        if type(self.AWSAccessKeySecret) is unicode:
+        if isinstance(msg, unicode):
+            msg = msg.encode('utf-8')
+        if isinstance(self.AWSAccessKeySecret, unicode):
             self.AWSAccessKeySecret = self.AWSAccessKeySecret.encode('utf-8')
 
         signature = b64encode(hmac.new(self.AWSAccessKeySecret, msg, sha256).digest())
@@ -374,22 +375,30 @@ class AmazonRequest(object):
         while trying and try_num < 3:
             try:
                 try_num += 1
+                
+                if 'headers' in kwargs:
+                    headers = kwargs['headers']
+                    del kwargs['headers']
+                else:
+                    headers = {}
+
                 response = requests.get(self._signed_url(**kwargs),
-                                        timeout=self.timeout)
+                                        timeout=self.timeout,
+                                        headers=headers)
                 trying = False
-            except requests.exceptions.ConnectTimeout as e:
-                logger.warning('Error encountered: %s.  Retrying...', e)
+            except requests.exceptions.ConnectTimeout as err:
+                logger.warning('Error encountered: %s.  Retrying...', err)
                 time.sleep(3)
         status_code = response.status_code
         if status_code != 200:
-            e = xmltodict.parse(response.text)
-            eCode = e[self.Operation + 'ErrorResponse']['Error']['Code']
-            eMsg = e[self.Operation + 'ErrorResponse']['Error']['Message']
+            err = xmltodict.parse(response.text)
+            err_code = err[self.Operation + 'ErrorResponse']['Error']['Code']
+            err_msg = err[self.Operation + 'ErrorResponse']['Error']['Message']
             logger.debug(response.text)
             logger.error('Amazon %sRequest STATUS %s: %s - %s',
-                         self.Operation, status_code, eCode, eMsg)
+                         self.Operation, status_code, err_code, err_msg)
             raise AmazonException(
-                'AmazonRequestError %s: %s - %s' % (status_code, eCode, eMsg))
+                'AmazonRequestError %s: %s - %s' % (status_code, err_code, err_msg))
         return xmltodict.parse(response.text)[self.Operation + 'Response']
 
 

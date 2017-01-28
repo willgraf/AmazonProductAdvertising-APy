@@ -3,7 +3,7 @@
 import time
 import logging
 
-from amazonapi import ProductAdvertisingAPI
+from productadvertising import ProductAdvertisingAPI
 
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,4 @@ class AmazonItem(object):
     def __init__(self, ItemId, Quantity='1'):
         self.id = ItemId
         self.quantity = Quantity
-
-
 

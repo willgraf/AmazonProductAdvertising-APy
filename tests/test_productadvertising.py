@@ -5,8 +5,8 @@ import pytest
 import sys, os.path
 sys.path.append(os.path.dirname(os.path.realpath(__file__)) + "/../")
 
-from amazonapi.productadvertising import ProductAdvertisingAPI
-from amazonapi.exceptions import AmazonException
+from amazon.productadvertising import ProductAdvertisingAPI
+from amazon.exceptions import AmazonException
 
 # Setting up testing variables
 with open('./config.json', 'r') as config_file:
@@ -17,7 +17,7 @@ AWS_ID=config['AccessKeyId']
 AWS_SECRET=config['AccessKeySecret']
 
 TEST_ASIN = 'B0080YHBR8'
-TEST_ASIN_2 = 'B001E5ZWT4'
+TEST_ASIN_2 = 'B000CSS8UE'
 BAD_ASIN = 'ABC123'
 
 API = ProductAdvertisingAPI(ASSOC_TAG, AWS_ID, AWS_SECRET, qps=.88)
