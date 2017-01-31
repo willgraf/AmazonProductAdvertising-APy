@@ -1,23 +1,24 @@
 #!/usr/bin/env
 # -*- coding: utf-8 -*-
-import sys
-_ver = sys.version_info
 
-if _ver[0] == 2:
-    from urllib import quote as quote
-elif _ver[0] == 3:
-    from urllib.parse import quote as quote
+"""Python Product Advertising API"""
 
 from base64 import b64encode
 from hashlib import sha256
+
 import time
 import hmac
 import logging
 
+try:
+    from urllib.parse import quote as quote
+except ImportError:
+    from urllib import quote as quote
+
 import xmltodict
 import requests
 
-from .exceptions import AmazonException
+from amazon.exceptions import AmazonException
 
 
 DOMAINS = {
@@ -36,19 +37,18 @@ DOMAINS = {
 }
 
 
-logger = logging.getLogger(__name__)
-
-
-"""
-Executes AmazonRequests.
-Contains functions for each of the main calls of the Amazon API.
-Required parameters are defined in the function, but users can
-customize their requests with Keyword Arguments.  It is required
-that the keyword name be that of the paramter in the API documentation.
-"""
+LOGGER = logging.getLogger(__name__)
 
 
 class ProductAdvertisingAPI(object):
+
+    """
+    Executes AmazonRequests.
+    Contains functions for each of the main calls of the Amazon API.
+    Required parameters are defined in the function, but users can
+    customize their requests with Keyword Arguments.  It is required
+    that the keyword name be that of the paramter in the API documentation.
+    """
 
     def __init__(self, AssociateTag, AWSAccessKeyId, AWSAccessKeySecret,
                  Region='US', Version='2013-08-01', Service='AWSECommerceService',
@@ -80,7 +80,7 @@ class ProductAdvertisingAPI(object):
             if self._last_time is not None:
                 wait_time = 1 / self.qps - (time.time() - self._last_time)
                 if wait_time > 0:
-                    logger.warning('Waiting %s secs to send next Request.',
+                    LOGGER.warning('Waiting %s secs to send next Request.',
                                    round(wait_time, 3))
                     time.sleep(wait_time)
             self._last_time = time.time()
@@ -115,7 +115,7 @@ class ProductAdvertisingAPI(object):
             for err in errors:
                 err_message = err['Message']
                 err_code = err['Code']
-                logger.error('%s  -  %s', err_code, err_message)
+                LOGGER.error('%s  -  %s', err_code, err_message)
                 raise AmazonException('%s  -  %s' % (err_code, err_message))
         return self
 
@@ -246,7 +246,7 @@ class ProductAdvertisingAPI(object):
                                       'their quantities is not matching up.')
         else:
             Quantity = '1'
-   
+
         for i in xrange(len(ItemId)):
             params = {
                 'Item.%d.%s' % (i, ItemIdType): ItemId[i],
@@ -303,23 +303,22 @@ class ProductAdvertisingAPI(object):
         return response
 
 
-"""
-AmazonRequest class.. Initializes with Amazon API Credentials
-(KEY_ID, KEY_SECRET, ASSOCIATE TAG) as well as the
-API Operation Name, the target Region, the Service,
-and the Version.
-
-This class is created only by the ProductAdvertisingAPI.
-"""
-
-
 class AmazonRequest(object):
+
+    """
+    AmazonRequest class.. Initializes with Amazon API Credentials
+    (KEY_ID, KEY_SECRET, ASSOCIATE TAG) as well as the
+    API Operation Name, the target Region, the Service,
+    and the Version.
+
+    This class is created only by the ProductAdvertisingAPI.
+    """
 
     def __init__(self, AssociateTag, AWSAccessKeyId, AWSAccessKeySecret,
                  Operation, Region, Service, Version, timeout):
         if Operation not in ['BrowseNodeLookup', 'ItemSearch', 'ItemLookup',
-                        'SimilarityLookup', 'CartAdd', 'CartClear',
-                        'CartCreate', 'CartGet', 'CartModify']:
+                             'SimilarityLookup', 'CartAdd', 'CartClear',
+                             'CartCreate', 'CartGet', 'CartModify']:
             raise ValueError('Invalid Operation Name: "%s".  Please see the '
                              'documentation for details: http://docs.aws.'
                              'amazon.com/AWSECommerceService/latest/DG/CHAP_'
@@ -334,6 +333,7 @@ class AmazonRequest(object):
         self.timeout = timeout
 
     def _quote_params(self, params):
+        """URL Encode Parameters"""
         key_values = []
         for key, val in params.iteritems():
             if not isinstance(key, str):
@@ -344,17 +344,16 @@ class AmazonRequest(object):
         key_values.sort()
         return '&'.join(['%s=%s' % (k, v) for k, v in key_values])
 
-    def _timestamp(self):
-        return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-
     def _signed_url(self, **kwargs):
-        params = {'Operation': self.Operation,
-                  'Service': self.Service,
-                  'Version': self.Version,
-                  'AssociateTag': self.AssociateTag,
-                  'AWSAccessKeyId': self.AWSAccessKeyId,
-                  'Timestamp': self._timestamp()}
-
+        """Return Signed URL for Request"""
+        params = {
+            'Operation': self.Operation,
+            'Service': self.Service,
+            'Version': self.Version,
+            'AssociateTag': self.AssociateTag,
+            'AWSAccessKeyId': self.AWSAccessKeyId,
+            'Timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        }
         params.update(kwargs)
         quoted_params = self._quote_params(params)
         server = DOMAINS[self.Region]
@@ -371,11 +370,12 @@ class AmazonRequest(object):
         return 'http://%s/onca/xml?%s&Signature=%s' % urlinputs
 
     def execute(self, **kwargs):
+        """execute AmazonRequest, return response as JSON"""
         trying, try_num = True, 0
         while trying and try_num < 3:
             try:
                 try_num += 1
-                
+
                 if 'headers' in kwargs:
                     headers = kwargs['headers']
                     del kwargs['headers']
@@ -387,15 +387,15 @@ class AmazonRequest(object):
                                         headers=headers)
                 trying = False
             except requests.exceptions.ConnectTimeout as err:
-                logger.warning('Error encountered: %s.  Retrying...', err)
+                LOGGER.warning('Error encountered: %s.  Retrying...', err)
                 time.sleep(3)
         status_code = response.status_code
         if status_code != 200:
             err = xmltodict.parse(response.text)
             err_code = err[self.Operation + 'ErrorResponse']['Error']['Code']
             err_msg = err[self.Operation + 'ErrorResponse']['Error']['Message']
-            logger.debug(response.text)
-            logger.error('Amazon %sRequest STATUS %s: %s - %s',
+            LOGGER.debug(response.text)
+            LOGGER.error('Amazon %sRequest STATUS %s: %s - %s',
                          self.Operation, status_code, err_code, err_msg)
             raise AmazonException(
                 'AmazonRequestError %s: %s - %s' % (status_code, err_code, err_msg))
