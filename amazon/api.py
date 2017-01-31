@@ -21,7 +21,7 @@ class Amazon(ProductAdvertisingAPI):
 
     def __init__(self, AssociateTag, AWSAccessKeyId, AWSAccessKeySecret, **kwargs):
         super(Amazon, self).__init__(AssociateTag, AWSAccessKeyId, AWSAccessKeySecret, **kwargs)
-        self.cart = AmazonCart(AssociateTag, AWSAccessKeyId, AWSAccessKeySecret)
+        # self.cart = AmazonCart(AssociateTag, AWSAccessKeyId, AWSAccessKeySecret)
         self.item_lookup_max = 10
 
     def lookup(self, ItemId, **kwargs):
