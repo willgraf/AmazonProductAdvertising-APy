@@ -34,6 +34,7 @@ class Amazon(ProductAdvertisingAPI):
         ItemId = ItemId if isinstance(ItemId, list) else [ItemId]
         if 'ResponseGroup' in kwargs:
             resp_group = kwargs['ResponseGroup']
+            del kwargs['ResponseGroup']
         else:
             resp_group = 'ItemAttributes,OfferFull,Offers,Images,Large'
         items = []
