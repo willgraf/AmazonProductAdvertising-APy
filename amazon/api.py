@@ -32,11 +32,15 @@ class Amazon(ProductAdvertisingAPI):
         if isinstance(ItemId, str):
             ItemId = ItemId.split(',') if ',' in ItemId else ItemId
         ItemId = ItemId if isinstance(ItemId, list) else [ItemId]
+        if 'ResponseGroup' in kwargs:
+            resp_group = kwargs['ResponseGroup']
+        else:
+            resp_group = 'ItemAttributes,OfferFull,Offers,Images,Large'
         items = []
         for i in xrange(0, len(ItemId), self.item_lookup_max):
             response = self.ItemLookup(
                 ItemId=','.join(ItemId[i : i + self.item_lookup_max]),
-                ResponseGroup='ItemAttributes,Offers,Images,Large',
+                ResponseGroup=resp_group,
                 **kwargs
             )
             xml = response['Items']['Item']
