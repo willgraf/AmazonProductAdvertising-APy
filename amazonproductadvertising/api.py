@@ -60,26 +60,28 @@ class AmazonCart(ProductAdvertisingAPI):
 
     def __init__(self, AssociateTag, AWSAccessKeyId, AWSAccessKeySecret, **kwargs):
         super(AmazonCart, self).__init__(AssociateTag, AWSAccessKeyId, AWSAccessKeySecret, **kwargs)
-        self.item_id = kwargs.get('ItemId')
-        if not self.item_id:
-            self.item_id = kwargs.get('ASIN')
-        self.quantity = kwargs.get('Quantity', '1')
+        item_id = kwargs.get('ItemId', kwargs.get('ASIN'))
+        quantity = kwargs.get('Quantity', '1')
         self.cart_id = kwargs.get('CartId')
         self.hmac = kwargs.get('HMAC')
         self.url = kwargs.get('URL')
-        if not self.cart_id and self.item_id:
-            response = self.create(ItemId=self.item_id, Quantity=self.quantity)
-            print(json.dumps(response))
+        self.items = kwargs.get('CartItems', [])
+        self.subtotal = kwargs.get('SubTotal', 0.0)
+        if not self.cart_id and item_id:
+            self.create(ItemId=item_id, Quantity=quantity)
 
     def create(self, **kwargs):
         """returns new AmazonCart"""
-        self.item_id = kwargs.get('ItemId')
-        self.quantity = kwargs.get('Quantity', '1')
-        response = super(AmazonCart, self).CartCreate(ItemId=self.item_id,
-                                                      Quantity=self.quantity)
+        item_id = kwargs.get('ItemId', kwargs.get('ASIN'))
+        quantity = kwargs.get('Quantity', '1')
+        response = super(AmazonCart, self).CartCreate(ItemId=item_id, Quantity=quantity)
         self.cart_id = response['Cart'].get('CartId')
         self.hmac = response['Cart'].get('HMAC')
         self.url = response['Cart'].get('PurchaseURL')
+        items = response['Cart'].get('CartItems', {}).get('CartItem', [])
+        items = items if not isinstance(items, list) else [items]
+        self.subtotal = int(response['Cart'].get('SubTotal', {}).get('Amount')) / 100.0
+        self.items = items
         return response
 
     def clear(self, **kwargs):
@@ -88,12 +90,23 @@ class AmazonCart(ProductAdvertisingAPI):
         return response
 
     @staticmethod
-    def get(self, CartId, ItemId, HMAC, **kwargs):
+    def get(self, CartId, CartItemId, HMAC, **kwargs):
         """
         Fetch a remote AmazonCart.  AmazonCarts will stay alive
         for ~30 days after being abandoned.
         Perhaps can save this as a field in the db for easier fulfillment.
         """
+        response = super(AmazonCart, self).CartGet(CartId=CartId, HMAC=HMAC,
+                                                   CartItemId=CartItemId, **kwargs)
+
+        cart_id = response['Cart'].get('CartId')
+        hmac = response['Cart'].get('URLEncodedHMAC')
+        url = response['Cart'].get('PurchaseURL')
+        items = response['Cart'].get('CartItems', {}).get('CartItem', [])
+        items = items if not isinstance(items, list) else [items]
+        self.subtotal = int(response['Cart'].get('SubTotal', {}).get('Amount')) / 100.0
+        self.items = items
+        return AmazonCart(CartId=CartId, CartItemId=CartItemId, HMAC=HMAC)
         pass
 
     def modify(self, ItemId, Quantity='0', **kwargs):
@@ -104,7 +117,7 @@ class AmazonCart(ProductAdvertisingAPI):
         pass
 
 
-    def add_item(self, ItemId=None, Quantity='1', **kwargs):
+    def add(self, ItemId=None, Quantity='1', **kwargs):
         """
         adds item to cart
         ItemId may be a list of ASINs (or OfferListingType, if specified as ItemIdType)
@@ -118,6 +131,7 @@ class AmazonCart(ProductAdvertisingAPI):
                              'kwargs as either ItemId or ASIN')
         if not ItemId:
             ItemId = asin
+
         response = super(AmazonCart, self).CartAdd(ASIN=ItemId, Quantity=Quantity,
                                                    HMAC=self.hmac, CartId=self.cart_id,
                                                    **kwargs)
