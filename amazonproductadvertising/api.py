@@ -68,10 +68,10 @@ class AmazonCart(ProductAdvertisingAPI):
         self.hmac = kwargs.get('HMAC')
         self.url = kwargs.get('URL')
         if not self.cart_id and self.item_id:
-            response = self.new(ItemId=self.item_id, Quantity=self.quantity)
+            response = self.create(ItemId=self.item_id, Quantity=self.quantity)
             print(json.dumps(response))
 
-    def new(self, **kwargs):
+    def create(self, **kwargs):
         """returns new AmazonCart"""
         self.item_id = kwargs.get('ItemId')
         self.quantity = kwargs.get('Quantity', '1')

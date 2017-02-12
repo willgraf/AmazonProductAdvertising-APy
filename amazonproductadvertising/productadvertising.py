@@ -103,18 +103,21 @@ class ProductAdvertisingAPI(object):
         return request.execute(**kwargs)
 
     def _check_valid_asin(self, asin):
-        asin = asin.split(',') if ',' in asin else [asin]
+        """
+        Strings will be split by commas (,) and lists of strings are OK too
+        """
+        asin = self._parse_multiple_items(asin)
         bad_asins = [a for a in asin if len(a) != 10 or a[0].upper() != 'B']
         if len(bad_asins) > 0:
             raise ValueError('INVALID ASIN: "%s".  ASIN is 10 characters long'
                              ' and starts with a "B".' % str(bad_asins))
 
     def _check_valid_quantity(self, quantity):
-        if not isinstance(quantity, list):
-            if isinstance(quantity, str):
-                quantity = quantity.split(',')
-            else:
-                quantity = [quantity]
+        """
+        Strings will be split by commas (,) and lists of strings are OK too
+        Quantity must be positive, and less than 1000
+        """
+        quantity = self._parse_multiple_items(quantity)
         for quant in quantity:
             try:
                 quant = int(quant)
@@ -122,9 +125,10 @@ class ProductAdvertisingAPI(object):
                     raise TypeError
             except (TypeError, ValueError):
                 raise ValueError('Invalid Quantity "%s": Quantity must be between'
-                                 ' 0 and 999, inclusive.' % str(quant))
+                                 ' 0 and 999, inclusive.' % quant)
 
     def _handle_errors(self, request):
+        """log request errors, raise if necessary"""
         if 'Errors' in request:
             errors = request['Errors']['Error']
             errors = [errors] if not isinstance(errors, list) else errors
@@ -136,6 +140,7 @@ class ProductAdvertisingAPI(object):
         return self
 
     def _parse_multiple_items(self, data):
+        """turn data from string to list"""
         if isinstance(data, str) and ',' in data:
             data = data.split(',')
         if not isinstance(data, list):
@@ -164,8 +169,7 @@ class ProductAdvertisingAPI(object):
     def ItemLookup(self, ItemId=None, **kwargs):
         if ItemId is None:
             raise ValueError('ItemId is required.')
-        elif isinstance(ItemId, list):
-            ItemId = ','.join(ItemId)
+        ItemId = self._parse_multiple_items(ItemId)
         self._check_valid_asin(ItemId)
         params = {
             'ItemId': ItemId
@@ -178,10 +182,8 @@ class ProductAdvertisingAPI(object):
     def SimilarityLookup(self, ItemId=None, **kwargs):
         if ItemId is None:
             raise ValueError('ItemId is required.')
-        if 'ItemIdType' in kwargs:
-            ItemIdType = kwargs['ItemIdType']
-        else:
-            ItemIdType = 'ASIN'
+        ItemIdType = kwargs.pop('ItemIdType', 'ASIN')
+        if ItemIdType == 'ASIN':
             self._check_valid_asin(ItemId)
         params = {
             'ItemId': ItemId,
@@ -195,24 +197,25 @@ class ProductAdvertisingAPI(object):
     def CartAdd(self, CartId=None, HMAC=None, **kwargs):
         if CartId is None:
             raise ValueError('CartId is required.')
-        elif 'ASIN' not in kwargs and 'OfferListingId' not in kwargs:
-            raise ValueError('Must provide a valid ASIN'
-                             ' or OfferListingId to add.')
+        elif HMAC is None:
+            raise ValueError('HMAC is required.')
+        elif 'ASIN' not in kwargs and 'OfferListingId' not in kwargs and 'ItemId' not in kwargs:
+            raise ValueError('Must provide a valid ASIN or OfferListingId to add.')
 
-        if 'OfferListingId' in kwargs:
-            item_type = 'OfferListingId'
-        else:
-            item_type = 'ASIN'
-            self._check_valid_asin(kwargs[item_type])
-        Quantity = kwargs.get('Quantity', '1')
+        item_type = 'OfferListingId' if 'OfferListingId' in kwargs else 'ASIN'
+
+        items = self._parse_multiple_items(kwargs.pop(item_type, kwargs.pop('ItemId')))
+
+        if item_type == 'ASIN':
+            self._check_valid_asin(items)
+
+        Quantity = self._parse_multiple_items(kwargs.pop('Quantity', '1'))
         self._check_valid_quantity(Quantity)
 
         params = {
             'CartId': CartId,
             'HMAC': HMAC
         }
-        items = kwargs[item_type]
-        items = items.split(',') if ',' in items else [items]
         for item in items:
             params.update({
                 'Item.%d.%s' % (items.index(item), item_type): item,
@@ -240,22 +243,22 @@ class ProductAdvertisingAPI(object):
     def CartCreate(self, ItemId=None, **kwargs):
         if ItemId is None:
             raise ValueError('ItemId is required.')
-        ItemIdType = kwargs.get('ItemIdType', 'ASIN')
+        ItemIdType = kwargs.pop('ItemIdType', 'ASIN')
 
         if ItemIdType.upper() == 'ASIN':
             self._check_valid_asin(ItemId)
 
-        Quantity = kwargs.get('Quantity', '1')
-        if isinstance(Quantity, str) and ',' in Quantity:
-            Quantity = Quantity.split(',')
+        ItemId = self._parse_multiple_items(ItemId)
+
+        Quantity = self._parse_multiple_items(kwargs.pop('Quantity', '1'))
+        if len(Quantity) == 1:
+            Quantity *= len(ItemId)
+
+        self._check_valid_quantity(Quantity)
         if isinstance(Quantity, list) and len(Quantity) != len(ItemId):
             raise AmazonException('Weird stuff with multiple items and '
                                   'their quantities is not matching up.')
-        elif not isinstance(Quantity, list):
-            Quantity = [Quantity] * len(ItemId)
 
-        self._check_valid_quantity(Quantity)
-        ItemId = ItemId.split(',') if ',' in ItemId else [ItemId]
         for i, item_id in enumerate(ItemId):
             params = {
                 'Item.%d.%s' % (i, ItemIdType): item_id,
@@ -290,11 +293,8 @@ class ProductAdvertisingAPI(object):
             raise ValueError('CartItemId is required.')
         elif HMAC is None:
             raise ValueError('HMAC is requred')
-        elif isinstance(CartItemId, str) and ',' in CartItemId:
-            CartItemId = CartItemId.split(',')
-        if not isinstance(CartItemId, list):
-            CartItemId = [CartItemId]
-        Quantity = kwargs.get('Quantity', '1')
+        CartItemId = self._parse_multiple_items(CartItemId)
+        Quantity = kwargs.pop('Quantity', '1')
         self._check_valid_quantity(Quantity)
         params = {
             'CartId': CartId,
