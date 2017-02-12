@@ -1,10 +1,9 @@
 #!/usr/bin/env
 # -*- coding: utf-8 -*-
-from amazon.productadvertising import *
-from amazon.api import *
-from amazon.exceptions import *
+from amazonproductadvertising.productadvertising import *
+from amazonproductadvertising.api import *
+from amazonproductadvertising.exceptions import *
 import logging
-
 
 try:
     from logging import NullHandler
