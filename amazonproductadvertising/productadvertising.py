@@ -10,6 +10,7 @@ import time
 import hmac
 import logging
 
+from urllib import urlencode
 try:
     from urllib.parse import quote as quote
 except ImportError:
@@ -52,36 +53,30 @@ class ProductAdvertisingAPI(object):
 
     def __init__(self, AssociateTag, AWSAccessKeyId, AWSAccessKeySecret, **kwargs):
         if (AssociateTag is None) or (AWSAccessKeyId is None) or (AWSAccessKeySecret is None):
-            raise ValueError('Your Amazon Credentials are'
-                             ' required and cannot be None.')
-        Region = kwargs.get('Region', 'US')
-        qps = kwargs.get('qps', None)
-        retry_count = kwargs.get('retry_count', 3)
-        Version = kwargs.get('Version', '2013-08-01')
-        Service = kwargs.get('Service', 'AWSECommerceService')
-        if not isinstance(Region, str) or Region.upper() not in DOMAINS:
-            raise ValueError('Your region is currently unsupported.')
-        if qps:
-            try:
-                qps = float(qps)
-            except:
-                raise ValueError('qps (query per second) must be a number.')
-        if not isinstance(retry_count, int):
-            try:
-                retry_count = int(retry_count)
-            except:
-                raise ValueError('retry_count must be an integer.')
+            raise ValueError('Your Amazon Credentials are required and cannot be None.')
         self.AssociateTag = AssociateTag
         self.AWSAccessKeyId = AWSAccessKeyId
         self.AWSAccessKeySecret = AWSAccessKeySecret
-        self.Region = Region
-        self.Version = Version
-        self.Service = Service
+        self.Region = kwargs.pop('Region', 'US')
+        self.Version = kwargs.pop('Version', '2013-08-01')
+        self.Service = kwargs.pop('Service', 'AWSECommerceService')
         self.ITEM_ID_MAX = 10
-        self.retry_count = kwargs.get('retry_count', 3)
-        self.qps = qps
-        self.timeout = kwargs.get('timeout', None)
+        self.retry_count = kwargs.pop('retry_count', 3)
+        self.qps = kwargs.pop('qps', None)
+        self.timeout = kwargs.pop('timeout', None)
         self._last_time = None
+        if not isinstance(self.Region, str) or self.Region.upper() not in DOMAINS:
+            raise ValueError('Your region is currently unsupported.')
+        if self.qps:
+            try:
+                self.qps = float(self.qps)
+            except:
+                raise ValueError('qps (query per second) must be a number.')
+        if not isinstance(self.retry_count, int):
+            try:
+                self.retry_count = int(self.retry_count)
+            except:
+                raise ValueError('retry_count must be an integer.')
 
 
     def _make_request(self, name, **kwargs):
@@ -109,8 +104,8 @@ class ProductAdvertisingAPI(object):
         asin = self._parse_multiple_items(asin)
         bad_asins = [a for a in asin if len(a) != 10 or a[0].upper() != 'B']
         if len(bad_asins) > 0:
-            raise ValueError('INVALID ASIN: "%s".  ASIN is 10 characters long'
-                             ' and starts with a "B".' % str(bad_asins))
+            raise ValueError('INVALID ASINS: "%s".  ASIN is 10 characters long'
+                             ' and starts with a "B".' % ', '.join(bad_asins))
 
     def _check_valid_quantity(self, quantity):
         """
@@ -132,11 +127,14 @@ class ProductAdvertisingAPI(object):
         if 'Errors' in request:
             errors = request['Errors']['Error']
             errors = [errors] if not isinstance(errors, list) else errors
+            error_output = []
             for err in errors:
                 err_message = err['Message']
                 err_code = err['Code']
                 LOGGER.error('%s  -  %s', err_code, err_message)
-                raise AmazonException('%s  -  %s' % (err_code, err_message))
+                error_output.append('%s  -  %s' % (err_code, err_message))
+            if len(error_output) > 0:
+                raise AmazonException(' , '.join(error_output))
         return self
 
     def _parse_multiple_items(self, data):
@@ -172,7 +170,7 @@ class ProductAdvertisingAPI(object):
         ItemId = self._parse_multiple_items(ItemId)
         self._check_valid_asin(ItemId)
         params = {
-            'ItemId': ItemId
+            'ItemId': ','.join(ItemId)
         }
         kwargs.update(params)
         response = self._make_request('ItemLookup', **kwargs)
@@ -204,22 +202,27 @@ class ProductAdvertisingAPI(object):
 
         item_type = 'OfferListingId' if 'OfferListingId' in kwargs else 'ASIN'
 
-        items = self._parse_multiple_items(kwargs.pop(item_type, kwargs.pop('ItemId')))
+        items = self._parse_multiple_items(kwargs.pop(item_type, kwargs.pop('ItemId', [])))
 
         if item_type == 'ASIN':
             self._check_valid_asin(items)
 
         Quantity = self._parse_multiple_items(kwargs.pop('Quantity', '1'))
         self._check_valid_quantity(Quantity)
+        Quantity = Quantity * len(items) if len(Quantity) == 1 else Quantity
 
+        if len(Quantity) != len(items):
+            raise AmazonException('Weird stuff with multiple items and '
+                                  'their quantities is not matching up.')
         params = {
             'CartId': CartId,
             'HMAC': HMAC
         }
-        for item in items:
+        for i, zip_data in enumerate(zip(items, Quantity)):
+            item, quantity = zip_data
             params.update({
-                'Item.%d.%s' % (items.index(item), item_type): item,
-                'Item.%d.Quantity' % items.index(item): Quantity
+                'Item.%d.%s' % (i, item_type): item,
+                'Item.%d.Quantity' % i: quantity
             })
         kwargs.update(params)
         response = self._make_request('CartAdd', **kwargs)
@@ -249,20 +252,19 @@ class ProductAdvertisingAPI(object):
             self._check_valid_asin(ItemId)
 
         ItemId = self._parse_multiple_items(ItemId)
-
         Quantity = self._parse_multiple_items(kwargs.pop('Quantity', '1'))
-        if len(Quantity) == 1:
-            Quantity *= len(ItemId)
+        Quantity = Quantity * len(ItemId) if len(Quantity) == 1 else Quantity
 
         self._check_valid_quantity(Quantity)
-        if isinstance(Quantity, list) and len(Quantity) != len(ItemId):
+        if len(Quantity) != len(ItemId):
             raise AmazonException('Weird stuff with multiple items and '
                                   'their quantities is not matching up.')
 
-        for i, item_id in enumerate(ItemId):
+        for i, zip_data in enumerate(zip(ItemId, Quantity)):
+            item_id, quantity = zip_data
             params = {
                 'Item.%d.%s' % (i, ItemIdType): item_id,
-                'Item.%d.Quantity' % i: Quantity[i]
+                'Item.%d.Quantity' % i: quantity
             }
             kwargs.update(params)
         response = self._make_request('CartCreate', **kwargs)
@@ -276,6 +278,7 @@ class ProductAdvertisingAPI(object):
             raise ValueError('CartItemId is required.')
         elif HMAC is None:
             raise ValueError('HMAC is requred')
+
         params = {
             'CartId': CartId,
             'CartItemId': CartItemId,
@@ -293,17 +296,25 @@ class ProductAdvertisingAPI(object):
             raise ValueError('CartItemId is required.')
         elif HMAC is None:
             raise ValueError('HMAC is requred')
+
         CartItemId = self._parse_multiple_items(CartItemId)
-        Quantity = kwargs.pop('Quantity', '1')
+        Quantity = self._parse_multiple_items(kwargs.pop('Quantity', '1'))
+        Quantity = Quantity * len(CartItemId) if len(Quantity) == 1 else Quantity
+
+        if len(Quantity) != len(CartItemId):
+            raise AmazonException('Weird stuff with multiple items and '
+                                  'their quantities is not matching up.')
+
         self._check_valid_quantity(Quantity)
         params = {
             'CartId': CartId,
             'HMAC': HMAC
         }
-        for i, item in enumerate(CartItemId):
+        for i, zip_info in enumerate(zip(CartItemId, Quantity)):
+            item, quantity = zip_info
             params.update({
                 'Item.%d.CartItemId' % i: item,
-                'Item.%d.Quantity' % i: Quantity[i]
+                'Item.%d.Quantity' % i: quantity
             })
         kwargs.update(params)
         response = self._make_request('CartModify', **kwargs)
@@ -331,9 +342,9 @@ class AmazonRequest(object):
                              'documentation for details: http://docs.aws.'
                              'amazon.com/AWSECommerceService/latest/DG/CHAP_'
                              'OperationListAlphabetical.html' % Operation)
-        self.AssociateTag = AssociateTag
+        self.AssociateTag = AssociateTag.encode('utf-8')
+        self.AWSAccessKeySecret = AWSAccessKeySecret.encode('utf-8')
         self.AWSAccessKeyId = AWSAccessKeyId
-        self.AWSAccessKeySecret = AWSAccessKeySecret
         self.Operation = Operation
         self.Region = Region
         self.Service = Service
@@ -359,7 +370,7 @@ class AmazonRequest(object):
             'Operation': self.Operation,
             'Service': self.Service,
             'Version': self.Version,
-            'AssociateTag': self.AssociateTag,
+            'AssociateTag': self.AssociateTag.encode('utf-8'),
             'AWSAccessKeyId': self.AWSAccessKeyId,
             'Timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         }
@@ -367,28 +378,25 @@ class AmazonRequest(object):
         quoted_params = self._quote_params(params)
         server = DOMAINS[self.Region]
 
-        msg = 'GET\n' + server + '\n' + '/onca/xml\n' + quoted_params
+        msg = 'GET\n%s\n/onca/xml\n%s' % (server, quoted_params)
 
         if isinstance(msg, unicode):
             msg = msg.encode('utf-8')
-        if isinstance(self.AWSAccessKeySecret, unicode):
-            self.AWSAccessKeySecret = self.AWSAccessKeySecret.encode('utf-8')
 
         signature = b64encode(hmac.new(self.AWSAccessKeySecret, msg, sha256).digest())
-        urlinputs = (server, quoted_params, quote(signature))
-        return 'http://%s/onca/xml?%s&Signature=%s' % urlinputs
+        return 'http://%s/onca/xml?%s&Signature=%s' % (server, quoted_params, quote(signature))
 
     def _handle_request_errors(self, response):
-        status_code = response.status_code
-        if status_code != 200:
+        """log errors, raise an AmazonException if a problem occurs"""
+        if response.status_code != 200:
             err = xmltodict.parse(response.text)
             err_code = err[self.Operation + 'ErrorResponse']['Error']['Code']
             err_msg = err[self.Operation + 'ErrorResponse']['Error']['Message']
             LOGGER.debug(response.text)
             LOGGER.error('Amazon %sRequest STATUS %s: %s - %s',
-                         self.Operation, status_code, err_code, err_msg)
+                         self.Operation, response.status_code, err_code, err_msg)
             raise AmazonException('AmazonRequestError %s: %s - %s' % \
-                                  (status_code, err_code, err_msg))
+                                  (response.status_code, err_code, err_msg))
 
     def execute(self, **kwargs):
         """execute AmazonRequest, return response as JSON"""
@@ -403,16 +411,18 @@ class AmazonRequest(object):
                 else:
                     headers = {}
 
-                response = requests.get(self._signed_url(**kwargs),
-                                        timeout=self.timeout,
-                                        headers=headers)
+                url = self._signed_url(**kwargs)
+                response = requests.get(url, timeout=self.timeout, headers=headers)
                 self._handle_request_errors(response)
                 trying = False
             except (AmazonException, requests.exceptions.ConnectTimeout) as err:
-                LOGGER.warning('Error encountered: %s.  Retrying...', err)
+                sleep_time = 3
+                LOGGER.warning('Error encountered: %s.  Retrying in %s seconds...',
+                               err, sleep_time)
                 if try_num >= self.retry_count:
                     raise err
-                time.sleep(3)
+                time.sleep(sleep_time)
+
         return xmltodict.parse(response.text)[self.Operation + 'Response']
 
 

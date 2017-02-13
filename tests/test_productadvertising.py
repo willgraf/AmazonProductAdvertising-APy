@@ -11,21 +11,27 @@ from amazonproductadvertising.exceptions import AmazonException
 # Setting up testing variables
 with open('./config.json', 'r') as config_file:
     config = json.load(config_file)['Amazon']
+    ASSOC_TAG = config['AssociateTag']
+    AWS_ID = config['AccessKeyId']
+    AWS_SECRET = config['AccessKeySecret']
+    del config
 
-ASSOC_TAG = config['AssociateTag']
-AWS_ID = config['AccessKeyId']
-AWS_SECRET = config['AccessKeySecret']
-
-TEST_ASIN = 'B0080YHBR8'
-TEST_ASIN_2 = 'B000CSS8UE'
+TEST_ASIN = 'B00JM5GW10'
+TEST_ASIN_2 = 'B00WI0QCAM'
+TEST_ASIN_3 = 'B018HB2QFU'
 BAD_ASIN = 'ABC123'
 
-API = ProductAdvertisingAPI(ASSOC_TAG, AWS_ID, AWS_SECRET, qps=.88, retry_count=1)
+API = ProductAdvertisingAPI(ASSOC_TAG, AWS_ID, AWS_SECRET, qps=1, retry_count=1)
 
-cart = API.CartCreate(TEST_ASIN)['Cart']
+CART = API.CartCreate(TEST_ASIN)['Cart']
 
-TEST_HMAC = cart['HMAC']
-TEST_CART = cart['CartId']
+TEST_HMAC = CART['HMAC']
+# TEST_URL_HMAC = cart['URLEncodedHMAC']
+TEST_CART = CART['CartId']
+
+def get_test_hmac_cartid(asin, quantity=1):
+    cart = API.CartCreate(asin, Quantity=quantity)['Cart']
+    return cart['HMAC'], cart['CartId']
 
 # Start Testing methods
 
@@ -63,13 +69,13 @@ class TestProductAdvertisingAPI:
             api.CartCreate(TEST_ASIN)
         assert 'Amazon Credentials are required' in str(err)
 
-    # def test_bad_associate_tag(self):
-    #     """weirdly this does not throw an error"""
-    #     with pytest.raises(AmazonException) as err:
-    #         api = ProductAdvertisingAPI(
-    #             '12345', AWS_ID, AWS_SECRET, retry_count=1)
-    #         api.CartCreate(TEST_ASIN)
-    #     assert 'AmazonRequestError' in str(err)
+    def test_bad_associate_tag(self):
+        with pytest.raises(AmazonException) as err:
+            hmac, cart_id = get_test_hmac_cartid(TEST_ASIN)
+            api = ProductAdvertisingAPI(
+                '12345', AWS_ID, AWS_SECRET, retry_count=1)
+            api.CartAdd(CartId=cart_id, ASIN=TEST_ASIN_2, HMAC=hmac)
+        assert 'AssociateTag' in str(err)
 
     def test_invalid_qps(self):
         with pytest.raises(ValueError) as err:
@@ -185,18 +191,18 @@ class TestProductAdvertisingAPI:
 
     # Cart Add.  Takes CartId, CartItemId, and HMAC.
 
-    def test_CartAdd_empty_cart(self):
+    def test_CartAdd_empty_cart_id(self):
         with pytest.raises(ValueError) as err:
             API.CartAdd(ASIN=TEST_ASIN, HMAC=TEST_HMAC)
         assert 'CartId' in str(err)
 
-    def test_CartAdd_empty_item(self):
+    def test_CartAdd_empty_item_id(self):
         with pytest.raises(ValueError) as err:
             API.CartAdd(CartId=1, HMAC=TEST_HMAC)
         assert 'ASIN or OfferListingId' in str(err)
 
     def test_CartAdd_empty_hmac(self):
-        with pytest.raises(AmazonException) as err:
+        with pytest.raises(ValueError) as err:
             API.CartAdd(CartId=1, ASIN=TEST_ASIN)
         assert 'HMAC' in str(err)
 
@@ -205,13 +211,22 @@ class TestProductAdvertisingAPI:
             API.CartAdd(CartId=1, ASIN=BAD_ASIN, HMAC=TEST_HMAC)
         assert 'INVALID ASIN' in str(err)
 
-    def test_CartAdd_good_params(self):
-        response = API.CartAdd(CartId=TEST_CART,
-                                          ASIN=TEST_ASIN_2,
-                                          HMAC=TEST_HMAC)
+    def test_CartAdd_good_params_one_item(self):
+        hmac, cart_id = get_test_hmac_cartid(TEST_ASIN)
+        response = API.CartAdd(CartId=cart_id, ASIN=TEST_ASIN_2, HMAC=hmac)
         req = response['Cart']['Request']
-        item = str(req['CartAddRequest']['Items']['Item']['ASIN'])
-        assert (req['IsValid'] == 'True') and (TEST_ASIN_2 == item)
+        items = response['Cart']['CartItems']['CartItem']
+        asins = [item['ASIN'] for item in items]
+        assert (req['IsValid'] == 'True') and (set(asins) == set([TEST_ASIN, TEST_ASIN_2]))
+
+    def test_CartAdd_good_params_multi_item(self):
+        hmac, cart_id = get_test_hmac_cartid(TEST_ASIN)
+        response = API.CartAdd(CartId=cart_id, ASIN=[TEST_ASIN_3, TEST_ASIN_2], HMAC=hmac)
+        req = response['Cart']['Request']
+        cart_items = response['Cart']['CartItems']['CartItem']
+        item1 = str(cart_items[0]['ASIN'])
+        item2 = str(cart_items[1]['ASIN'])
+        assert (req['IsValid'] == 'True') and (TEST_ASIN_2 == item2) and (TEST_ASIN_3 == item1)
 
     # Cart Clear.  Takes CartId, and HMAC.
 
@@ -226,7 +241,8 @@ class TestProductAdvertisingAPI:
         assert 'HMAC' in str(err)
 
     def test_CartClear_good_params(self):
-        response = API.CartClear(CartId=TEST_CART, HMAC=TEST_HMAC)
+        hmac, cart_id = get_test_hmac_cartid(TEST_ASIN)
+        response = API.CartClear(CartId=cart_id, HMAC=hmac)
         clear = 'Items' not in response['Cart']['Request']['CartClearRequest']
         assert clear and response['Cart']['Request']['IsValid'] == 'True'
 
@@ -242,10 +258,17 @@ class TestProductAdvertisingAPI:
             API.CartCreate(BAD_ASIN)
         assert 'INVALID ASIN' in str(err)
 
-    def test_CartCreate_good_params(self):
-        response = API.CartCreate(TEST_ASIN)['Cart']['Request']
-        item = str(response['CartCreateRequest']['Items']['Item']['ASIN'])
-        assert response['IsValid'] == 'True' and TEST_ASIN == item
+    def test_CartCreate_good_one_item(self):
+        response = API.CartCreate(TEST_ASIN)
+        item = str(response['Cart']['CartItems']['CartItem']['ASIN'])
+        assert response['Cart']['Request']['IsValid'] == 'True' and TEST_ASIN == item
+
+    def test_CartCreate_good_multi_item(self):
+        response = API.CartCreate([TEST_ASIN, TEST_ASIN_2])
+        items = response['Cart']['CartItems']['CartItem']
+        asins = [item['ASIN'] for item in items]
+        assert (response['Cart']['Request']['IsValid'] == 'True' and 
+                asins == [TEST_ASIN, TEST_ASIN_2])
 
     # Cart Get.  Takes CartId, CartItemId, and HMAC.
 
@@ -265,10 +288,11 @@ class TestProductAdvertisingAPI:
         assert 'HMAC' in str(err)
 
     def test_CartGet_good_params(self):
-        response = API.CartGet(CartId=TEST_CART,
-                                          CartItemId=TEST_ASIN,
-                                          HMAC=TEST_HMAC)
-        assert response['Cart']['Request']['IsValid'] == 'True'
+        hmac, cart_id = get_test_hmac_cartid(TEST_ASIN)
+        response = API.CartGet(CartId=cart_id, CartItemId=TEST_ASIN, HMAC=hmac)
+        assert (response['Cart']['Request']['IsValid'] == 'True' and
+                response['Cart']['CartId'] == cart_id and 
+                response['Cart']['HMAC'] == hmac)
 
     # Cart Modify.  Takes CartId, CartItemId, and HMAC.
 
@@ -284,12 +308,12 @@ class TestProductAdvertisingAPI:
 
     def test_CartModify_empty_hmac(self):
         with pytest.raises(ValueError) as err:
-            API.CartModify(CartId=TEST_CART,
-                                      CartItemId=TEST_ASIN)
+            API.CartModify(CartId=TEST_CART, CartItemId=TEST_ASIN)
         assert 'HMAC' in str(err)
 
     def test_CartModify_good_params(self):
-        response = API.CartModify(CartId=TEST_CART,
-                                               CartItemId=TEST_ASIN,
-                                               HMAC=TEST_HMAC)
+        hmac, cart_id = get_test_hmac_cartid(TEST_ASIN, quantity=1)
+        response = API.CartModify(CartId=cart_id, CartItemId=TEST_ASIN, Quantity=2, HMAC=hmac)
         assert response['Cart']['Request']['IsValid'] == 'True'
+
+
