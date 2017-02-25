@@ -6,8 +6,8 @@ import sys
 import os.path
 sys.path.append(os.path.dirname(os.path.realpath(__file__)) + "/../")
 
-from amazonproductadvertising.api import Amazon, AmazonCart
-from amazonproductadvertising.exceptions import AmazonException
+from paapy.api import Amazon, AmazonCart
+from paapy.exceptions import AmazonException
 
 # Setting up testing variables
 with open('./config.json', 'r') as config_file:

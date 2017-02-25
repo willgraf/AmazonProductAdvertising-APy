@@ -1,8 +1,8 @@
 #!/usr/bin/env
 # -*- coding: utf-8 -*-
-from amazonproductadvertising.productadvertising import *
-from amazonproductadvertising.api import *
-from amazonproductadvertising.exceptions import *
+from paapy.productadvertising import *
+from paapy.api import *
+from paapy.exceptions import *
 import logging
 
 try:

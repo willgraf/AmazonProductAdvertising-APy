@@ -18,7 +18,7 @@ except ImportError:
 import xmltodict
 import requests
 
-from amazonproductadvertising.exceptions import AmazonException
+from paapy.exceptions import AmazonException
 
 LOGGER = logging.getLogger(__name__)
 

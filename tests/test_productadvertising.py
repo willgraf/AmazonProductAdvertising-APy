@@ -6,8 +6,8 @@ import sys
 import os.path
 sys.path.append(os.path.dirname(os.path.realpath(__file__)) + "/../")
 
-from amazonproductadvertising.productadvertising import ProductAdvertisingAPI
-from amazonproductadvertising.exceptions import AmazonException
+from paapy.productadvertising import ProductAdvertisingAPI
+from paapy.exceptions import AmazonException
 
 # Setting up testing variables
 try:

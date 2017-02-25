@@ -11,10 +11,10 @@ AssociateTag is required along with AWSAccessKeyId and AWSAccessKeySecret
 
 from collections import OrderedDict
 import logging
-import json, pdb
+import json
 
-from amazonproductadvertising.productadvertising import ProductAdvertisingAPI
-from amazonproductadvertising.exceptions import CartException, AmazonException
+from paapy.productadvertising import ProductAdvertisingAPI
+from paapy.exceptions import CartException, AmazonException
 
 
 LOGGER = logging.getLogger(__name__)
