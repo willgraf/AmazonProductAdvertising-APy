@@ -10,7 +10,6 @@ import time
 import hmac
 import logging
 
-from urllib import urlencode
 try:
     from urllib.parse import quote as quote
 except ImportError:
@@ -21,6 +20,7 @@ import requests
 
 from amazonproductadvertising.exceptions import AmazonException
 
+LOGGER = logging.getLogger(__name__)
 
 DOMAINS = {
     'CA': 'webservices.amazon.ca',
@@ -36,9 +36,6 @@ DOMAINS = {
     'BR': 'webservices.amazon.com.br',
     'MX': 'webservices.amazon.com.mx'
 }
-
-
-LOGGER = logging.getLogger(__name__)
 
 
 class ProductAdvertisingAPI(object):
@@ -60,7 +57,9 @@ class ProductAdvertisingAPI(object):
         self.Region = kwargs.pop('Region', 'US')
         self.Version = kwargs.pop('Version', '2013-08-01')
         self.Service = kwargs.pop('Service', 'AWSECommerceService')
+        self.Validate = kwargs.pop('Validate', False)
         self.ITEM_ID_MAX = 10
+        self._response = None
         self.retry_count = kwargs.pop('retry_count', 3)
         self.qps = kwargs.pop('qps', None)
         self.timeout = kwargs.pop('timeout', None)
@@ -80,6 +79,13 @@ class ProductAdvertisingAPI(object):
 
 
     def _make_request(self, name, **kwargs):
+
+        request = AmazonRequest(self.AssociateTag, self.AWSAccessKeyId,
+                                self.AWSAccessKeySecret, Operation=name,
+                                Region=self.Region, Service=self.Service,
+                                Version=self.Version, Validate=self.Validate,
+                                timeout=self.timeout, retry_count=self.retry_count)
+
         if self.qps is not None and self.qps > 0:
             if self._last_time is not None:
                 wait_time = 1 / self.qps - (time.time() - self._last_time)
@@ -89,13 +95,8 @@ class ProductAdvertisingAPI(object):
                     time.sleep(wait_time)
             self._last_time = time.time()
 
-        request = AmazonRequest(self.AssociateTag, self.AWSAccessKeyId,
-                                self.AWSAccessKeySecret, Operation=name,
-                                Region=self.Region, Service=self.Service,
-                                Version=self.Version, timeout=self.timeout,
-                                retry_count=self.retry_count)
-
-        return request.execute(**kwargs)
+        self._response = request.execute(**kwargs)
+        return self._response
 
     def _check_valid_asin(self, asin):
         """
@@ -334,7 +335,7 @@ class AmazonRequest(object):
     """
 
     def __init__(self, AssociateTag, AWSAccessKeyId, AWSAccessKeySecret,
-                 Operation, Region, Service, Version, timeout, retry_count):
+                 Operation, Region, Service, Version, Validate, timeout, retry_count):
         if Operation not in ['BrowseNodeLookup', 'ItemSearch', 'ItemLookup',
                              'SimilarityLookup', 'CartAdd', 'CartClear',
                              'CartCreate', 'CartGet', 'CartModify']:
@@ -342,86 +343,104 @@ class AmazonRequest(object):
                              'documentation for details: http://docs.aws.'
                              'amazon.com/AWSECommerceService/latest/DG/CHAP_'
                              'OperationListAlphabetical.html' % Operation)
-        self.AssociateTag = AssociateTag.encode('utf-8')
-        self.AWSAccessKeySecret = AWSAccessKeySecret.encode('utf-8')
+        self.AssociateTag = AssociateTag
+        self.AWSAccessKeySecret = AWSAccessKeySecret
         self.AWSAccessKeyId = AWSAccessKeyId
         self.Operation = Operation
         self.Region = Region
         self.Service = Service
         self.Version = Version
+        self.Validate = Validate
         self.timeout = timeout
         self.retry_count = retry_count
 
-    def _quote_params(self, params):
-        """URL Encode Parameters"""
-        key_values = []
-        for key, val in params.iteritems():
-            if not isinstance(key, str):
-                key = str(key)
-            if not isinstance(val, str):
-                val = str(val)
-            key_values.append((quote(key), quote(val)))
-        key_values.sort()
-        return '&'.join(['%s=%s' % (k, v) for k, v in key_values])
+    def _unicode_safe(self, x):
+        return quote(unicode(x).encode('utf-8'), safe='~')
 
-    def _signed_url(self, **kwargs):
+    def _get_query_string(self, params):
+        """URL Encode Parameters as query string"""
+        pairs = [(self._unicode_safe(k), self._unicode_safe(v)) for k, v in params.iteritems()]
+        pairs.sort()
+        query_string = '&'.join(['%s=%s' % pair for pair in pairs])
+        return query_string
+
+    def _get_signature(self, query):
+        msg = 'GET\n%s\n/onca/xml\n%s' % (DOMAINS[self.Region], query)
+
+        if isinstance(msg, unicode):
+            msg = msg.encode('utf-8')
+
+        if isinstance(self.AWSAccessKeySecret, unicode):
+            self.AWSAccessKeySecret = self.AWSAccessKeySecret.encode('utf-8')
+
+        new_hmac = hmac.new(self.AWSAccessKeySecret, msg, sha256).digest()
+        encoded_hmac = b64encode(new_hmac)
+        url_encoded_hmac = quote(encoded_hmac)
+        return url_encoded_hmac
+
+    def _get_signed_url(self, **kwargs):
         """Return Signed URL for Request"""
         params = {
             'Operation': self.Operation,
             'Service': self.Service,
             'Version': self.Version,
-            'AssociateTag': self.AssociateTag.encode('utf-8'),
+            'Validate': self.Validate,
+            'AssociateTag': self.AssociateTag,
             'AWSAccessKeyId': self.AWSAccessKeyId,
             'Timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         }
+
         params.update(kwargs)
-        quoted_params = self._quote_params(params)
-        server = DOMAINS[self.Region]
+        query_string = self._get_query_string(params)
 
-        msg = 'GET\n%s\n/onca/xml\n%s' % (server, quoted_params)
+        signature = self._get_signature(query_string)
 
-        if isinstance(msg, unicode):
-            msg = msg.encode('utf-8')
-
-        signature = b64encode(hmac.new(self.AWSAccessKeySecret, msg, sha256).digest())
-        return 'http://%s/onca/xml?%s&Signature=%s' % (server, quoted_params, quote(signature))
+        return 'http://%s/onca/xml?%s&Signature=%s' % \
+               (DOMAINS[self.Region], query_string, signature)
 
     def _handle_request_errors(self, response):
         """log errors, raise an AmazonException if a problem occurs"""
         if response.status_code != 200:
+
             err = xmltodict.parse(response.text)
             err_code = err[self.Operation + 'ErrorResponse']['Error']['Code']
             err_msg = err[self.Operation + 'ErrorResponse']['Error']['Message']
+
             LOGGER.debug(response.text)
             LOGGER.error('Amazon %sRequest STATUS %s: %s - %s',
                          self.Operation, response.status_code, err_code, err_msg)
+
             raise AmazonException('AmazonRequestError %s: %s - %s' % \
                                   (response.status_code, err_code, err_msg))
 
     def execute(self, **kwargs):
         """execute AmazonRequest, return response as JSON"""
+
         trying, try_num = True, 0
-        while trying and try_num < self.retry_count:
+        headers = kwargs.pop('headers', None)
+
+        while trying and try_num <= self.retry_count:
+
             try:
+
                 try_num += 1
+                url = self._get_signed_url(**kwargs)
 
-                if 'headers' in kwargs:
-                    headers = kwargs['headers']
-                    del kwargs['headers']
+                if headers:
+                    response = requests.get(url, timeout=self.timeout, headers=headers)
                 else:
-                    headers = {}
+                    response = requests.get(url, timeout=self.timeout)
 
-                url = self._signed_url(**kwargs)
-                response = requests.get(url, timeout=self.timeout, headers=headers)
                 self._handle_request_errors(response)
                 trying = False
+
             except (AmazonException, requests.exceptions.ConnectTimeout) as err:
-                sleep_time = 3
-                LOGGER.warning('Error encountered: %s.  Retrying in %s seconds...',
-                               err, sleep_time)
-                if try_num >= self.retry_count:
+
+                if try_num > self.retry_count:
                     raise err
-                time.sleep(sleep_time)
+
+                sleep_time = 1
+                LOGGER.warning('Error encountered: %s.  Retrying momentarily...', err)
 
         return xmltodict.parse(response.text)[self.Operation + 'Response']
 
