@@ -440,11 +440,11 @@ class AmazonRequest(object):
             except (AmazonException, requests.exceptions.ConnectTimeout) as err:
 
                 try:
-                    is_retry_code = response.status_code in NO_RETRY_CODES
+                    short_circuit = response.status_code in NO_RETRY_CODES
                 except (TypeError, NameError, AttributeError):
-                    is_retry_code = True
+                    short_circuit = False
 
-                if try_num > self.retry_count or not is_retry_code:
+                if try_num > self.retry_count or short_circuit:
                     raise err
 
                 sleep_time = 1
