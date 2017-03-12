@@ -8,13 +8,13 @@ the CartId, HMAC, and AssociateTag are needed.
 CartId is returned in Response from CartCreate.
 AssociateTag is required along with AWSAccessKeyId and AWSAccessKeySecret
 """
-
+from __future__ import print_function
 from collections import OrderedDict
 import logging
 import json
 
 from paapy.productadvertising import ProductAdvertisingAPI
-from paapy.exceptions import CartException, AmazonException
+from paapy.exceptions import CartException
 
 
 LOGGER = logging.getLogger(__name__)

@@ -22,6 +22,8 @@ from paapy.exceptions import AmazonException
 
 LOGGER = logging.getLogger(__name__)
 
+NO_RETRY_CODES = [403] # HTTP failure status codes that will not be retried.
+
 DOMAINS = {
     'CA': 'webservices.amazon.ca',
     'CN': 'webservices.amazon.cn',
@@ -104,6 +106,7 @@ class ProductAdvertisingAPI(object):
         """
         asin = self._parse_multiple_items(asin)
         bad_asins = [a for a in asin if len(a) != 10 or a[0].upper() != 'B']
+
         if len(bad_asins) > 0:
             raise ValueError('INVALID ASINS: "%s".  ASIN is 10 characters long'
                              ' and starts with a "B".' % ', '.join(bad_asins))
@@ -436,7 +439,12 @@ class AmazonRequest(object):
 
             except (AmazonException, requests.exceptions.ConnectTimeout) as err:
 
-                if try_num > self.retry_count:
+                try:
+                    is_retry_code = response.status_code in NO_RETRY_CODES
+                except (TypeError, NameError, AttributeError):
+                    is_retry_code = True
+
+                if try_num > self.retry_count or not is_retry_code:
                     raise err
 
                 sleep_time = 1
